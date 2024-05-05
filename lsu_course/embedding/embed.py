@@ -1,58 +1,74 @@
 import os
+import pathlib
 
-import pandas as pd
+import pandas
 import tiktoken
+from dotenv import load_dotenv
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from openai import OpenAI
+
+load_dotenv()
 
 openai = OpenAI(api_key=os.environ['OPENAI_API_KEY'])
 
 DOMAIN = "developer.mozilla.org"
 
 
-def remove_newlines(series):
-  series = series.str.replace('\n', ' ')
-  series = series.str.replace('\\n', ' ')
-  series = series.str.replace('  ', ' ')
-  series = series.str.replace('  ', ' ')
-  return series
+def remove_newlines(series: pandas.Series):
+    series = series.str.replace('\n', ' ')
+    series = series.str.replace('\\n', ' ')
+    series = series.str.replace('  ', ' ')
+    series = series.str.replace('  ', ' ')
+    return series
 
+
+project_root = pathlib.Path(__file__).parent.parent.resolve()
+TEXT_DIRECTORY = project_root / 'text' / DOMAIN
+PROCESSED_DIRECTORY = project_root / 'processed'
+SCRAPED_CSV_FILE_PATH = PROCESSED_DIRECTORY / 'scraped.csv'
+EMBEDDINGS_CSV_FILE_PATH = PROCESSED_DIRECTORY / 'embeddings.csv'
 
 # Create a list to store the text files
 texts = []
 
 # Get all the text files in the text directory
-for file in os.listdir("text/" + DOMAIN + "/"):
+for file in os.listdir(TEXT_DIRECTORY):
 
-  # Open the file and read the text
-  with open("text/" + DOMAIN + "/" + file, "r", encoding="UTF-8") as f:
-    text = f.read()
-    # we replace the last 4 characters to get rid of .txt, and replace _ with / to generate the URLs we scraped
-    filename = file[:-4].replace('_', '/')
-    """
-    There are a lot of contributor.txt files that got included in the scrape, this weeds them out. There are also a lot of auth required urls that have been scraped to weed out as well
-    """
-    if filename.endswith(".txt") or 'users/fxa/login' in filename:
-      continue
+    file_to_open = TEXT_DIRECTORY / file
+    print(file_to_open)
 
-    # then we replace underscores with / to get the actual links so we can cite contributions
-    texts.append((filename, text))
+    # Open the file and read the text
+    with open(file_to_open, "r", encoding="UTF-8") as f:
+        text = f.read()
+        # we replace the last 4 characters to get rid of .txt, and replace _ with / to generate the URLs we scraped
+        filename = file[:-4].replace('_', '/')
+
+        """
+        There are a lot of contributor.txt files that got included in the scrape, this weeds them out. There are also a lot of auth required urls that have been scraped to weed out as well
+        """
+        if filename.endswith(".txt") or 'users/fxa/login' in filename:
+            continue
+
+        # then we replace underscores with / to get the actual links so we can cite contributions
+        texts.append(
+            (filename, text))
 
 # Create a dataframe from the list of texts
-df = pd.DataFrame(texts, columns=['fname', 'text'])
+data_frame = pandas.DataFrame(texts, columns=['fname', 'text'])
 
 # Set the text column to be the raw text with the newlines removed
-df['text'] = df.fname + ". " + remove_newlines(df.text)
-df.to_csv('processed/scraped.csv')
+data_frame['text'] = data_frame.fname + ". " + remove_newlines(data_frame.text)
 
-# Load the cl100k_base tokenizer which is designed to work with the ada-002 model
+data_frame.to_csv(SCRAPED_CSV_FILE_PATH)
+
 tokenizer = tiktoken.get_encoding("cl100k_base")
 
-df = pd.read_csv('processed/scraped.csv', index_col=0)
-df.columns = ['title', 'text']
+data_frame = pandas.read_csv(SCRAPED_CSV_FILE_PATH, index_col=0)
+data_frame.columns = ['title', 'text']
 
 # Tokenize the text and save the number of tokens to a new column
-df['n_tokens'] = df.text.apply(lambda x: len(tokenizer.encode(x)))
+data_frame['n_tokens'] = data_frame.text.apply(
+    lambda x: len(tokenizer.encode(x)))
 
 chunk_size = 1000  # Max number of tokens
 
@@ -66,28 +82,30 @@ text_splitter = RecursiveCharacterTextSplitter(
 
 shortened = []
 
-for row in df.iterrows():
+for row in data_frame.iterrows():
 
-  # If the text is None, go to the next row
-  if row[1]['text'] is None:
-    continue
+    # If the text is None, go to the next row
+    if row[1]['text'] is None:
+        continue
 
-  # If the number of tokens is greater than the max number of tokens, split the text into chunks
-  if row[1]['n_tokens'] > chunk_size:
-    # Split the text using LangChain's text splitter
-    chunks = text_splitter.create_documents([row[1]['text']])
-    # Append the content of each chunk to the 'shortened' list
-    for chunk in chunks:
-      shortened.append(chunk.page_content)
+    # If the number of tokens is greater than the max number of tokens, split the text into chunks
+    if row[1]['n_tokens'] > chunk_size:
+        # Split the text using LangChain's text splitter
+        chunks = text_splitter.create_documents([row[1]['text']])
+        # Append the content of each chunk to the 'shortened' list
+        for chunk in chunks:
+            shortened.append(chunk.page_content)
 
-  # Otherwise, add the text to the list of shortened texts
-  else:
-    shortened.append(row[1]['text'])
+    # Otherwise, add the text to the list of shortened texts
+    else:
+        shortened.append(row[1]['text'])
 
-df = pd.DataFrame(shortened, columns=['text'])
-df['n_tokens'] = df.text.apply(lambda x: len(tokenizer.encode(x)))
+data_frame = pandas.DataFrame(shortened, columns=['text'])
+data_frame['n_tokens'] = data_frame.text.apply(
+    lambda x: len(tokenizer.encode(x)))
 
-df['embeddings'] = df.text.apply(lambda x: openai.embeddings.create(
+
+data_frame['embeddings'] = data_frame.text.apply(lambda x: openai.embeddings.create(
     input=x, model='text-embedding-ada-002').data[0].embedding)
 
-df.to_csv('processed/embeddings.csv')
+data_frame.to_csv(EMBEDDINGS_CSV_FILE_PATH)
