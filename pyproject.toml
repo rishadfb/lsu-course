@@ -6,8 +6,10 @@ authors = ["Rishad Bharucha <rb2102@gmail.com>"]
 readme = "README.md"
 
 [tool.poetry.dependencies]
-python = "^3.12"
-
+python = "^3.11"
+python-telegram-bot = "^21.1.1"
+openai = "^1.25.1"
+python-dotenv = "^1.0.1"
 
 [build-system]
 requires = ["poetry-core"]
