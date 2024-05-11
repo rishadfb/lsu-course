@@ -5,6 +5,7 @@ import os
 import numpy as np
 import pandas as pd
 from dotenv import load_dotenv
+from functions import functions, run_function
 from openai import OpenAI
 from questions import answer_question
 from telegram import Update
@@ -15,8 +16,6 @@ from telegram.ext import (
     MessageHandler,
     filters,
 )
-
-from .functions import functions, run_function
 
 # Load environment variables from a .env file.
 load_dotenv()
