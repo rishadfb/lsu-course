@@ -4,6 +4,7 @@ import os
 
 import numpy as np
 import pandas as pd
+import requests
 from dotenv import load_dotenv
 from functions import functions, run_function
 from openai import OpenAI
@@ -139,19 +140,33 @@ async def mozilla(update: Update, context: ContextTypes.DEFAULT_TYPE):
     answer = answer_question(df, question=update.message.text, debug=True)
     await context.bot.send_message(chat_id=update.effective_chat.id, text=answer)
 
+
+async def image(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    response = openai.images.generate(
+        prompt=update.message.text, model="dall-e-3", n=1, size="1024x1024"
+    )
+    image_url = response.data[0].url
+    image_response = requests.get(image_url)
+    await context.bot.send_photo(
+        chat_id=update.effective_chat.id, photo=image_response.content
+    )
+
+
 if __name__ == "__main__":
     # Set up the Telegram bot with the provided token.
     application = ApplicationBuilder().token(tg_bot_token).build()
 
     # Define command handlers for starting the bot and chatting.
     start_handler = CommandHandler("start", start)
+    mozilla_handler = CommandHandler("mozilla", mozilla)
+    image_handler = CommandHandler("image", image)
     chat_handler = MessageHandler(filters.TEXT & (~filters.COMMAND), chat)
-    mozilla_handler = CommandHandler('mozilla', mozilla)
 
     # Add command handlers to the application.
+    application.add_handler(chat_handler)
+    application.add_handler(image_handler)
     application.add_handler(mozilla_handler)
     application.add_handler(start_handler)
-    application.add_handler(chat_handler)
 
     # Start the bot and poll for new messages.
     application.run_polling()
